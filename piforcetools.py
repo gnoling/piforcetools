@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # Written by TravistyOJ (AKA Capaneus)
 
-import os, collections, signal, sys, subprocess, socket
+import os, collections, signal, sys, subprocess, socket, os.path
 import triforcetools
 from Adafruit_CharLCDPlate import Adafruit_CharLCDPlate
 from time import sleep
@@ -31,7 +31,7 @@ else:
     lcd = Adafruit_CharLCDPlate()
 lcd.begin(16, 2)
 lcd.message(" Piforce Tools\n   Ver. 1.4")
-sleep(2)
+sleep(1)
 
 # Try to import game list script, if it fails, signal error on LCD
 try:
@@ -67,10 +67,65 @@ else:
     mode = "games"
     lcd.message(selection)
 
+def runGame(selection):
+    lcd.clear()
+    lcd.message("Connecting...")
+
+    try:
+        triforcetools.connect(ips[curr_ip], 10703)
+    except:
+        lcd.clear()
+        lcd.message("Error:\nConnect Failed")
+        sleep(1)
+        lcd.clear()
+        lcd.message(selection)
+        return
+
+    lcd.clear()
+    lcd.message("Sending...")
+    lcd.setCursor(10, 0)
+    lcd.ToggleBlink()
+
+    triforcetools.HOST_SetMode(0, 1)
+    triforcetools.SECURITY_SetKeycode("\x00" * 8)
+    triforcetools.DIMM_UploadFile(rom_dir+games[selection])
+    triforcetools.HOST_Restart()
+    triforcetools.TIME_SetLimit(10*60*1000)
+    triforcetools.disconnect()
+
+    lcd.ToggleBlink()
+    lcd.clear()
+    lcd.message("Transfer\nComplete!")
+    saveLast(selection)
+    sleep(5)
+    lcd.clear()
+    lcd.message(selection)
+
+def saveLast(file):
+    target = open(".lastrun", 'w')
+    target.truncate()
+    target.write(file)
+    target.close()
+
+def runLast():
+    if os.path.isfile(".lastrun") and os.access(".lastrun", os.R_OK):
+        with open('.lastrun', 'r') as f:
+            selection = f.readline()
+        if selection in games:
+            runGame(selection)
+
+loadlastTimeout = time.time() + 30;
+loadlast = 1
 while True:
+
+    # Auto load last game after no-input timeout
+    if loadlast == 1 and time.time() > loadlastTimeout:
+        loadlast = 0
+        runLast()
 
     # Handle SELECT
     if lcd.buttonPressed(lcd.SELECT):
+        loadLast = 0
         if lcd.SELECT not in pressedButtons:
             pressedButtons.append(lcd.SELECT)
             if selection is "Change Target":
@@ -89,44 +144,15 @@ while True:
                     lcd.message("Netdimm is\nunreachable!")
                 sleep(2)
                 lcd.clear()
-                lcd.message(selection)			
-            else:
-                lcd.clear()
-                lcd.message("Connecting...")
-
-                try:
-                    triforcetools.connect(ips[curr_ip], 10703)
-                except:
-                    lcd.clear()
-                    lcd.message("Error:\nConnect Failed")
-                    sleep(1)
-                    lcd.clear()
-                    lcd.message(selection)
-                    continue
-
-                lcd.clear()
-                lcd.message("Sending...")
-                lcd.setCursor(10, 0)
-                lcd.ToggleBlink()
-
-                triforcetools.HOST_SetMode(0, 1)
-                triforcetools.SECURITY_SetKeycode("\x00" * 8)
-                triforcetools.DIMM_UploadFile(rom_dir+games[selection])
-                triforcetools.HOST_Restart()
-                triforcetools.TIME_SetLimit(10*60*1000)
-                triforcetools.disconnect()
-
-                lcd.ToggleBlink()
-                lcd.clear()
-                lcd.message("Transfer\nComplete!")
-                sleep(5)
-                lcd.clear()
                 lcd.message(selection)
+            else:
+                runGame(selection)
     elif lcd.SELECT in pressedButtons:
         pressedButtons.remove(lcd.SELECT)
 
     # Handle LEFT
     if lcd.buttonPressed(lcd.LEFT):
+        loadLast = 0
         if lcd.LEFT not in pressedButtons and len(games) > 0:
             pressedButtons.append(lcd.LEFT)
             mode      = "games"
@@ -137,12 +163,13 @@ while True:
             lcd.message("Games")
             sleep(1)
             lcd.clear()
-            lcd.message(selection)            
+            lcd.message(selection)
     elif lcd.LEFT in pressedButtons:
         pressedButtons.remove(lcd.LEFT)
 
     # Handle RIGHT
     if lcd.buttonPressed(lcd.RIGHT):
+        loadLast = 0
         if lcd.RIGHT not in pressedButtons:
             pressedButtons.append(lcd.RIGHT)
             mode      = "commands"
@@ -159,6 +186,7 @@ while True:
 
     # Handle UP
     if lcd.buttonPressed(lcd.UP):
+        loadLast = 0
         if lcd.UP not in pressedButtons and previous != None:
             pressedButtons.append(lcd.UP)
             if mode is "games":
@@ -175,14 +203,15 @@ while True:
                 except StopIteration:
                     break
             lcd.clear()
-            lcd.message(selection)                
+            lcd.message(selection)
     elif lcd.UP in pressedButtons:
         pressedButtons.remove(lcd.UP)
 
     # Handle DOWN
     if lcd.buttonPressed(lcd.DOWN):
+        loadLast = 0
         if lcd.DOWN not in pressedButtons:
-            pressedButtons.append(lcd.DOWN)            
+            pressedButtons.append(lcd.DOWN)
             previous = selection
             try:
                 selection = iterator.next()
